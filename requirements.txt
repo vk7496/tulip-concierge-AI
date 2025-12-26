@@ -1,8 +1,2 @@
 streamlit
 groq
-python-dotenv
-streamlit-chat
-pandas
-arabic-reshaper
-python-bidi
-streamlit-extras
