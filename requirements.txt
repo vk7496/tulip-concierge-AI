@@ -1,5 +1,5 @@
-streamlit>=1.32
-groq>=0.9
+streamlit
+groq
 python-dotenv
 streamlit-chat
 pandas
