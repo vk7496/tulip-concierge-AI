@@ -9,7 +9,7 @@ st.title("Groq Connection Test")
 
 if st.button("Test Groq"):
     response = client.chat.completions.create(
-        model="llama3-8b-8192",
+        model="Llama-3.3-70b",
         messages=[
             {"role": "user", "content": "Say hello in Arabic and English"}
         ],
