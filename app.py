@@ -2,7 +2,7 @@ import streamlit as st
 from groq import Groq
 
 # -----------------------------
-# Page Configuration
+# Page Config
 # -----------------------------
 st.set_page_config(
     page_title="Tulip Concierge AI",
@@ -11,118 +11,162 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Load Groq Client
+# Groq Client
 # -----------------------------
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception:
-    st.error("GROQ_API_KEY در Streamlit Secrets تنظیم نشده است.")
+    st.error("GROQ_API_KEY is missing in Streamlit Secrets.")
     st.stop()
 
 # -----------------------------
-# UI Header
+# Session State
+# -----------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# -----------------------------
+# Header
 # -----------------------------
 st.title("🌷 Tulip Concierge AI")
-st.caption("AI-powered luxury concierge service")
+st.caption("AI Concierge designed to resolve real guest pain points")
 
 # -----------------------------
 # Language Selection
 # -----------------------------
 language_map = {
     "English": "Respond in English.",
-    "Arabic": "أجب باللغة العربية.",
-    "German": "Antworte auf Deutsch.",
-    "Russian": "Отвечай на русском языке."
+    "Arabic": "أجب باللغة العربية وبأسلوب فندقي راقٍ.",
+    "German": "Antworte höflich auf Deutsch.",
+    "Russian": "Отвечай вежливо на русском языке."
 }
 
 selected_language = st.selectbox(
-    "Select Language",
+    "Preferred Language",
     list(language_map.keys())
 )
 
 language_instruction = language_map[selected_language]
 
 # -----------------------------
-# Service Selection
+# Display Chat History
 # -----------------------------
-service = st.selectbox(
-    "Select Service",
-    [
-        "General Concierge",
-        "Table Reservation",
-        "Spa Booking"
-    ]
-)
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
 # -----------------------------
-# User Input
+# Pain Point Classifier
 # -----------------------------
-user_input = st.text_area(
-    "Your request",
-    placeholder="Example: Book a romantic dinner for two tonight at 8 PM"
-)
+def classify_issue(text: str):
+    text = text.lower()
+
+    if any(k in text for k in ["check", "check-in", "reception", "arrival"]):
+        return "Check-in & Reception delays"
+    if any(k in text for k in ["water", "shower", "drain", "air", "ac", "room"]):
+        return "Room maintenance issue"
+    if any(k in text for k in ["food", "breakfast", "restaurant", "menu"]):
+        return "Restaurant & food experience"
+    if any(k in text for k in ["spa", "pool", "steam", "sauna"]):
+        return "Spa / wellness service"
+    if any(k in text for k in ["call", "phone", "reach", "contact"]):
+        return "Difficulty contacting staff"
+
+    return "General concierge request"
 
 # -----------------------------
 # Prompt Builder
 # -----------------------------
-def build_prompt(service, user_input, language_instruction):
-    base_context = f"""
-You are a professional luxury hotel concierge.
-Be polite, clear, and helpful.
+def build_prompt(conversation, issue_type):
+    history = "\n".join(
+        [f"{m['role'].capitalize()}: {m['content']}" for m in conversation]
+    )
+
+    return f"""
+You are a luxury hotel AI concierge for Royal Tulip.
+Your goal is to resolve guest dissatisfaction professionally.
+
+Detected issue category:
+{issue_type}
+
+Guidelines:
+- Be calm, polite, and solution-oriented
+- If issue needs staff intervention, clearly offer it
+- Ask only ONE follow-up question if needed
+- Never blame the guest or hotel
+
 {language_instruction}
-"""
 
-    if service == "Table Reservation":
-        task = """
-Handle a restaurant table reservation.
-Ask politely for missing details like date, time, number of guests.
-Confirm the reservation clearly.
+Conversation:
+{history}
 """
-    elif service == "Spa Booking":
-        task = """
-Handle a spa booking request.
-Ask for preferred treatment, date, and time if missing.
-Confirm the booking professionally.
-"""
-    else:
-        task = """
-Provide concierge assistance for hotels, tourism, dining, or services.
-"""
-
-    return f"{base_context}\n{task}\nUser request:\n{user_input}"
 
 # -----------------------------
-# Generate Response
+# User Input
 # -----------------------------
-if st.button("Submit Request"):
-    if not user_input.strip():
-        st.warning("Please enter your request.")
-    else:
-        with st.spinner("Processing your request..."):
-            try:
-                prompt = build_prompt(
-                    service,
-                    user_input,
-                    language_instruction
+user_input = st.chat_input("How may I assist you today?")
+
+if user_input:
+    # Store user message
+    st.session_state.messages.append(
+        {"role": "user", "content": user_input}
+    )
+
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    issue_type = classify_issue(user_input)
+
+    with st.spinner("Resolving your request..."):
+        try:
+            prompt = build_prompt(
+                st.session_state.messages,
+                issue_type
+            )
+
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.5,
+                max_tokens=350
+            )
+
+            assistant_reply = response.choices[0].message.content
+
+            st.session_state.messages.append(
+                {"role": "assistant", "content": assistant_reply}
+            )
+
+            with st.chat_message("assistant"):
+                st.markdown(assistant_reply)
+
+            # Action Suggest Note
+            if issue_type != "General concierge request":
+                st.info(
+                    "If you wish, I can forward this request directly to hotel staff for immediate assistance."
                 )
 
-                response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.6,
-                    max_tokens=300
-                )
+        except Exception as e:
+            st.error(f"Groq API Error: {e}")
 
-                st.success("Response generated successfully")
-                st.markdown(response.choices[0].message.content)
+# -----------------------------
+# WhatsApp Escalation
+# -----------------------------
+st.divider()
+st.markdown("### 📲 Immediate Human Assistance")
 
-            except Exception as e:
-                st.error(f"Error communicating with Groq API: {e}")
+whatsapp_number = "96891278434"  # replace with hotel number
+whatsapp_text = "Hello, I need assistance regarding my stay at Royal Tulip."
+
+whatsapp_url = (
+    f"https://wa.me/{whatsapp_number}"
+    f"?text={whatsapp_text.replace(' ', '%20')}"
+)
+
+st.link_button("Contact Hotel via WhatsApp", whatsapp_url)
 
 # -----------------------------
 # Footer
 # -----------------------------
 st.divider()
-st.caption("Designed by Golden Bird LLC | Tulip Concierge AI")
+st.caption("Golden Bird LLC | AI Guest Experience Solutions")
