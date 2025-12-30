@@ -1,172 +1,146 @@
 import streamlit as st
-from groq import Groq
+import pandas as pd
+import numpy as np
 
-# -----------------------------
+# -------------------------
 # Page Config
-# -----------------------------
+# -------------------------
 st.set_page_config(
-    page_title="Tulip Concierge AI",
-    page_icon="🌷",
-    layout="centered"
+    page_title="AI Hotel Intelligence Demo",
+    layout="wide"
 )
 
-# -----------------------------
-# Groq Client
-# -----------------------------
-try:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-except Exception:
-    st.error("GROQ_API_KEY is missing in Streamlit Secrets.")
-    st.stop()
+st.title("AI Hotel & Restaurant Intelligence (Demo)")
+st.caption("Simulated internal data – No external files required")
 
-# -----------------------------
-# Session State
-# -----------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# -------------------------
+# Simulated Hotel / Restaurant Data
+# -------------------------
+np.random.seed(42)
 
-# -----------------------------
-# Header
-# -----------------------------
-st.title("🌷 Tulip Concierge AI")
-st.caption("AI Concierge designed to resolve real guest pain points")
-
-# -----------------------------
-# Language Selection
-# -----------------------------
-language_map = {
-    "English": "Respond in English.",
-    "Arabic": "أجب باللغة العربية وبأسلوب فندقي راقٍ.",
-    "German": "Antworte höflich auf Deutsch.",
-    "Russian": "Отвечай вежливо на русском языке."
+data = {
+    "Hotel_Name": [
+        "Muscat Pearl Hotel", "Golden Dunes Resort", "Oman Vista Hotel",
+        "Desert Rose Inn", "Qatar Bay Hotel", "Doha Grand Stay",
+        "Arabian Nights Resort", "Sea Breeze Hotel"
+    ],
+    "City": [
+        "Muscat", "Muscat", "Muscat",
+        "Nizwa", "Doha", "Doha",
+        "Salalah", "Salalah"
+    ],
+    "Restaurant_Name": [
+        "Pearl Restaurant", "Dunes Grill", "Vista Lounge",
+        "Rose Kitchen", "Bay Seafood", "Grand Steakhouse",
+        "Arabian Taste", "Sea Breeze Cafe"
+    ],
+    "Google_Rating": np.round(np.random.uniform(3.5, 4.8, 8), 1),
+    "Monthly_Bookings": np.random.randint(200, 1200, 8),
+    "Avg_Room_Price_USD": np.random.randint(80, 320, 8),
+    "Customer_Complaints": np.random.randint(5, 80, 8)
 }
 
-selected_language = st.selectbox(
-    "Preferred Language",
-    list(language_map.keys())
+df = pd.DataFrame(data)
+
+# -------------------------
+# Sidebar Filters
+# -------------------------
+st.sidebar.header("Filters")
+
+selected_city = st.sidebar.multiselect(
+    "Select City",
+    options=df["City"].unique(),
+    default=df["City"].unique()
 )
 
-language_instruction = language_map[selected_language]
-
-# -----------------------------
-# Display Chat History
-# -----------------------------
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# -----------------------------
-# Pain Point Classifier
-# -----------------------------
-def classify_issue(text: str):
-    text = text.lower()
-
-    if any(k in text for k in ["check", "check-in", "reception", "arrival"]):
-        return "Check-in & Reception delays"
-    if any(k in text for k in ["water", "shower", "drain", "air", "ac", "room"]):
-        return "Room maintenance issue"
-    if any(k in text for k in ["food", "breakfast", "restaurant", "menu"]):
-        return "Restaurant & food experience"
-    if any(k in text for k in ["spa", "pool", "steam", "sauna"]):
-        return "Spa / wellness service"
-    if any(k in text for k in ["call", "phone", "reach", "contact"]):
-        return "Difficulty contacting staff"
-
-    return "General concierge request"
-
-# -----------------------------
-# Prompt Builder
-# -----------------------------
-def build_prompt(conversation, issue_type):
-    history = "\n".join(
-        [f"{m['role'].capitalize()}: {m['content']}" for m in conversation]
-    )
-
-    return f"""
-You are a luxury hotel AI concierge for Royal Tulip.
-Your goal is to resolve guest dissatisfaction professionally.
-
-Detected issue category:
-{issue_type}
-
-Guidelines:
-- Be calm, polite, and solution-oriented
-- If issue needs staff intervention, clearly offer it
-- Ask only ONE follow-up question if needed
-- Never blame the guest or hotel
-
-{language_instruction}
-
-Conversation:
-{history}
-"""
-
-# -----------------------------
-# User Input
-# -----------------------------
-user_input = st.chat_input("How may I assist you today?")
-
-if user_input:
-    # Store user message
-    st.session_state.messages.append(
-        {"role": "user", "content": user_input}
-    )
-
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    issue_type = classify_issue(user_input)
-
-    with st.spinner("Resolving your request..."):
-        try:
-            prompt = build_prompt(
-                st.session_state.messages,
-                issue_type
-            )
-
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.5,
-                max_tokens=350
-            )
-
-            assistant_reply = response.choices[0].message.content
-
-            st.session_state.messages.append(
-                {"role": "assistant", "content": assistant_reply}
-            )
-
-            with st.chat_message("assistant"):
-                st.markdown(assistant_reply)
-
-            # Action Suggest Note
-            if issue_type != "General concierge request":
-                st.info(
-                    "If you wish, I can forward this request directly to hotel staff for immediate assistance."
-                )
-
-        except Exception as e:
-            st.error(f"Groq API Error: {e}")
-
-# -----------------------------
-# WhatsApp Escalation
-# -----------------------------
-st.divider()
-st.markdown("### 📲 Immediate Human Assistance")
-
-whatsapp_number = "96891278434"  # replace with hotel number
-whatsapp_text = "Hello, I need assistance regarding my stay at Royal Tulip."
-
-whatsapp_url = (
-    f"https://wa.me/{whatsapp_number}"
-    f"?text={whatsapp_text.replace(' ', '%20')}"
+min_rating = st.sidebar.slider(
+    "Minimum Google Rating",
+    min_value=3.0,
+    max_value=5.0,
+    value=3.5,
+    step=0.1
 )
 
-st.link_button("Contact Hotel via WhatsApp", whatsapp_url)
+filtered_df = df[
+    (df["City"].isin(selected_city)) &
+    (df["Google_Rating"] >= min_rating)
+]
 
-# -----------------------------
-# Footer
-# -----------------------------
+# -------------------------
+# KPIs
+# -------------------------
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric(
+    "Average Rating",
+    f"{filtered_df['Google_Rating'].mean():.2f}"
+)
+
+col2.metric(
+    "Total Monthly Bookings",
+    int(filtered_df["Monthly_Bookings"].sum())
+)
+
+col3.metric(
+    "Avg Room Price (USD)",
+    f"{filtered_df['Avg_Room_Price_USD'].mean():.0f}"
+)
+
+col4.metric(
+    "Total Complaints",
+    int(filtered_df["Customer_Complaints"].sum())
+)
+
 st.divider()
-st.caption("Golden Bird LLC | AI Guest Experience Solutions")
+
+# -------------------------
+# Data Table
+# -------------------------
+st.subheader("Hotel & Restaurant Data")
+st.dataframe(filtered_df, use_container_width=True)
+
+# -------------------------
+# Simple AI Insight Logic
+# -------------------------
+st.subheader("AI-Generated Insights")
+
+def generate_insight(row):
+    if row["Google_Rating"] < 4.0 and row["Customer_Complaints"] > 40:
+        return "High risk: Improve service quality & staff training."
+    elif row["Google_Rating"] >= 4.5 and row["Monthly_Bookings"] > 800:
+        return "Top performer: Consider premium pricing strategy."
+    elif row["Avg_Room_Price_USD"] > 250 and row["Google_Rating"] < 4.2:
+        return "Overpriced: Price-value mismatch detected."
+    else:
+        return "Stable performance: Monitor trends."
+
+filtered_df["AI_Insight"] = filtered_df.apply(generate_insight, axis=1)
+
+st.dataframe(
+    filtered_df[[
+        "Hotel_Name", "City", "Google_Rating",
+        "Monthly_Bookings", "Avg_Room_Price_USD",
+        "AI_Insight"
+    ]],
+    use_container_width=True
+)
+
+# -------------------------
+# Explanation Section
+# -------------------------
+with st.expander("How this demo helps hotels"):
+    st.markdown("""
+    **This demo simulates how AI can help hotels and restaurants:**
+    - Identify underperforming branches
+    - Detect pricing issues
+    - Highlight top-performing properties
+    - Support management decisions without external data dependency
+    
+    In real deployment, this system can be connected to:
+    - Google Maps & Reviews
+    - Booking engines
+    - PMS systems
+    - Customer feedback platforms
+    """)
+
+st.success("Demo ready for presentation to hotels or investors.")
