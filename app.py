@@ -1,146 +1,117 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
+from groq import Groq
+import datetime
+import urllib.parse
 
-# -------------------------
-# Page Config
-# -------------------------
+# -------------------- PAGE CONFIG --------------------
 st.set_page_config(
-    page_title="AI Hotel Intelligence Demo",
-    layout="wide"
+    page_title="Tulip Concierge AI",
+    page_icon="🏨",
+    layout="centered"
 )
 
-st.title("AI Hotel & Restaurant Intelligence (Demo)")
-st.caption("Simulated internal data – No external files required")
+# -------------------- INIT GROQ --------------------
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+MODEL_NAME = "llama-3.3-70b-versatile"
 
-# -------------------------
-# Simulated Hotel / Restaurant Data
-# -------------------------
-np.random.seed(42)
+# -------------------- SESSION STATE --------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-data = {
-    "Hotel_Name": [
-        "Muscat Pearl Hotel", "Golden Dunes Resort", "Oman Vista Hotel",
-        "Desert Rose Inn", "Qatar Bay Hotel", "Doha Grand Stay",
-        "Arabian Nights Resort", "Sea Breeze Hotel"
-    ],
-    "City": [
-        "Muscat", "Muscat", "Muscat",
-        "Nizwa", "Doha", "Doha",
-        "Salalah", "Salalah"
-    ],
-    "Restaurant_Name": [
-        "Pearl Restaurant", "Dunes Grill", "Vista Lounge",
-        "Rose Kitchen", "Bay Seafood", "Grand Steakhouse",
-        "Arabian Taste", "Sea Breeze Cafe"
-    ],
-    "Google_Rating": np.round(np.random.uniform(3.5, 4.8, 8), 1),
-    "Monthly_Bookings": np.random.randint(200, 1200, 8),
-    "Avg_Room_Price_USD": np.random.randint(80, 320, 8),
-    "Customer_Complaints": np.random.randint(5, 80, 8)
+if "language" not in st.session_state:
+    st.session_state.language = "English"
+
+# -------------------- LANGUAGE PROMPTS --------------------
+SYSTEM_PROMPTS = {
+    "English": "You are a professional hotel concierge at Royal Tulip Muscat. Be polite, concise, and helpful.",
+    "Arabic": "أنت موظف استقبال محترف في فندق رويال توليب مسقط. كن مهذباً وواضحاً ومفيداً.",
+    "German": "Sie sind ein professioneller Hotel-Concierge im Royal Tulip Muscat. Seien Sie höflich und hilfreich.",
+    "Russian": "Вы профессиональный консьерж отеля Royal Tulip Muscat. Будьте вежливы и полезны."
 }
 
-df = pd.DataFrame(data)
+# -------------------- HEADER --------------------
+st.markdown("## 🏨 Tulip Concierge AI")
+st.caption("Your Digital Assistant – Royal Tulip Muscat")
 
-# -------------------------
-# Sidebar Filters
-# -------------------------
-st.sidebar.header("Filters")
-
-selected_city = st.sidebar.multiselect(
-    "Select City",
-    options=df["City"].unique(),
-    default=df["City"].unique()
+# -------------------- LANGUAGE SELECT --------------------
+st.session_state.language = st.selectbox(
+    "Select Language / اختر اللغة",
+    ["English", "Arabic", "German", "Russian"]
 )
 
-min_rating = st.sidebar.slider(
-    "Minimum Google Rating",
-    min_value=3.0,
-    max_value=5.0,
-    value=3.5,
-    step=0.1
-)
+# -------------------- QUICK ACTIONS --------------------
+st.markdown("### ✨ Quick Services")
 
-filtered_df = df[
-    (df["City"].isin(selected_city)) &
-    (df["Google_Rating"] >= min_rating)
-]
+col1, col2 = st.columns(2)
 
-# -------------------------
-# KPIs
-# -------------------------
-col1, col2, col3, col4 = st.columns(4)
+with col1:
+    if st.button("🍽️ Reserve a Restaurant"):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": "Please tell me your preferred date, time, and number of guests for the restaurant reservation."
+        })
 
-col1.metric(
-    "Average Rating",
-    f"{filtered_df['Google_Rating'].mean():.2f}"
-)
+with col2:
+    if st.button("💆 Book Spa Session"):
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": "Sure. Please let me know your preferred date, time, and type of spa treatment."
+        })
 
-col2.metric(
-    "Total Monthly Bookings",
-    int(filtered_df["Monthly_Bookings"].sum())
-)
+# -------------------- CHAT DISPLAY --------------------
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-col3.metric(
-    "Avg Room Price (USD)",
-    f"{filtered_df['Avg_Room_Price_USD'].mean():.0f}"
-)
+# -------------------- USER INPUT --------------------
+user_input = st.chat_input("How may I assist you today?")
 
-col4.metric(
-    "Total Complaints",
-    int(filtered_df["Customer_Complaints"].sum())
-)
+def get_ai_response(chat_history):
+    messages = [{"role": "system", "content": SYSTEM_PROMPTS[st.session_state.language]}]
+    messages.extend(chat_history)
 
+    completion = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        max_tokens=300
+    )
+    return completion.choices[0].message.content
+
+if user_input:
+    st.session_state.messages.append({"role": "user", "content": user_input})
+
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            reply = get_ai_response(st.session_state.messages)
+            st.markdown(reply)
+
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+
+# -------------------- HUMAN ASSISTANCE --------------------
 st.divider()
+st.markdown("### 📞 Immediate Human Assistance")
 
-# -------------------------
-# Data Table
-# -------------------------
-st.subheader("Hotel & Restaurant Data")
-st.dataframe(filtered_df, use_container_width=True)
+hotel_whatsapp_number = "96891278434"  # شماره هتل
+encoded_msg = urllib.parse.quote("Hello, I need assistance at Royal Tulip Muscat.")
+whatsapp_link = f"https://wa.me/{hotel_whatsapp_number}?text={encoded_msg}"
 
-# -------------------------
-# Simple AI Insight Logic
-# -------------------------
-st.subheader("AI-Generated Insights")
-
-def generate_insight(row):
-    if row["Google_Rating"] < 4.0 and row["Customer_Complaints"] > 40:
-        return "High risk: Improve service quality & staff training."
-    elif row["Google_Rating"] >= 4.5 and row["Monthly_Bookings"] > 800:
-        return "Top performer: Consider premium pricing strategy."
-    elif row["Avg_Room_Price_USD"] > 250 and row["Google_Rating"] < 4.2:
-        return "Overpriced: Price-value mismatch detected."
-    else:
-        return "Stable performance: Monitor trends."
-
-filtered_df["AI_Insight"] = filtered_df.apply(generate_insight, axis=1)
-
-st.dataframe(
-    filtered_df[[
-        "Hotel_Name", "City", "Google_Rating",
-        "Monthly_Bookings", "Avg_Room_Price_USD",
-        "AI_Insight"
-    ]],
-    use_container_width=True
+st.markdown(
+    f"""
+    <a href="{whatsapp_link}" target="_blank">
+        <button style="
+            background-color:#25D366;
+            color:white;
+            border:none;
+            padding:12px 20px;
+            border-radius:8px;
+            font-size:16px;
+            cursor:pointer;">
+            Contact Hotel via WhatsApp
+        </button>
+    </a>
+    """,
+    unsafe_allow_html=True
 )
 
-# -------------------------
-# Explanation Section
-# -------------------------
-with st.expander("How this demo helps hotels"):
-    st.markdown("""
-    **This demo simulates how AI can help hotels and restaurants:**
-    - Identify underperforming branches
-    - Detect pricing issues
-    - Highlight top-performing properties
-    - Support management decisions without external data dependency
-    
-    In real deployment, this system can be connected to:
-    - Google Maps & Reviews
-    - Booking engines
-    - PMS systems
-    - Customer feedback platforms
-    """)
-
-st.success("Demo ready for presentation to hotels or investors.")
+# -------------------- FOOTER --------------------
+st.caption("Golden Bird LLC | AI Guest Experience Solutions")
