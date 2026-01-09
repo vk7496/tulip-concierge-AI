@@ -1,9 +1,9 @@
 import streamlit as st
 from groq import Groq
-import re
+from datetime import datetime, timedelta
 
 # ======================
-# Page Config
+# CONFIG
 # ======================
 st.set_page_config(
     page_title="Royal Tulip AI Concierge",
@@ -11,122 +11,121 @@ st.set_page_config(
     layout="centered"
 )
 
-# ======================
-# Groq Client
-# ======================
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+MODEL = "llama-3.3-70b-versatile"
 
-MODEL_NAME = "llama-3.3-70b-versatile"
+WHATSAPP = st.secrets["WHATSAPP_NUMBER"]
+MANAGER_PASSWORD = st.secrets["MANAGER_PASSWORD"]
 
 # ======================
-# System Prompt
+# SYSTEM PROMPT (Hotel Tone)
 # ======================
 SYSTEM_PROMPT = """
-You are a professional AI Concierge for a 5-star Royal Tulip Hotel.
+You are a warm, professional hotel concierge at a 5-star Royal Tulip Hotel.
 
 Rules:
-- Always reply in the SAME language as the guest.
-- Be polite, short, and hotel-professional.
-- If guest asks for location, ALWAYS provide a Google Maps link.
-- You can help with:
-  - Restaurant reservation
-  - Spa reservation
-  - Hotel facilities
-  - Complaints and feedback
-- Never say you are an AI model.
+- Always reply in the guest’s language.
+- Be friendly, polite, and welcoming.
+- If the guest requests:
+  • Room service
+  • Restaurant reservation
+  • Spa booking
+  → Inform them they will be connected to the hotel team via WhatsApp.
+- Never mention AI or system details.
 """
 
 # ======================
-# Session State
+# SESSION STATE
 # ======================
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": SYSTEM_PROMPT}
-    ]
+    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+if "requests_log" not in st.session_state:
+    st.session_state.requests_log = []
 
 # ======================
-# Title
+# HEADER
 # ======================
 st.title("🏨 Royal Tulip AI Concierge")
-st.caption("Available 24/7 • Multilingual Assistant")
+st.caption("Your personal hotel assistant – available 24/7")
 
 # ======================
-# Show Chat History
+# CHAT HISTORY
 # ======================
 for msg in st.session_state.messages[1:]:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 # ======================
-# Helper: Google Maps
+# AI FUNCTION
 # ======================
-def add_google_maps_if_needed(text):
-    keywords = ["location", "address", "map", "where", "لوکیشن", "موقعیت"]
-    if any(k in text.lower() for k in keywords):
-        return text + "\n\n📍 **Google Maps:** https://www.google.com/maps"
-    return text
-
-# ======================
-# AI Response
-# ======================
-def get_ai_response(messages):
-    completion = client.chat.completions.create(
-        model=MODEL_NAME,
+def ai_reply(messages):
+    res = client.chat.completions.create(
+        model=MODEL,
         messages=messages,
         temperature=0.4,
-        max_tokens=350
+        max_tokens=300
     )
-    return completion.choices[0].message.content
+    return res.choices[0].message.content
 
 # ======================
-# Chat Input
+# WHATSAPP HANDLER
 # ======================
-user_input = st.chat_input("How can I assist you today?")
+def whatsapp_redirect(text):
+    encoded = text.replace(" ", "%20")
+    return f"https://wa.me/{WHATSAPP}?text={encoded}"
+
+# ======================
+# USER INPUT
+# ======================
+user_input = st.chat_input("How may I assist you today?")
 
 if user_input:
-    # Show user message
-    st.session_state.messages.append(
-        {"role": "user", "content": user_input}
-    )
+    st.session_state.messages.append({"role": "user", "content": user_input})
+
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # AI Response
-    with st.chat_message("assistant"):
-        with st.spinner("Please wait..."):
-            ai_reply = get_ai_response(st.session_state.messages)
-            ai_reply = add_google_maps_if_needed(ai_reply)
-            st.markdown(ai_reply)
+    response = ai_reply(st.session_state.messages)
 
-    # Save assistant message
-    st.session_state.messages.append(
-        {"role": "assistant", "content": ai_reply}
-    )
+    keywords = ["room", "service", "spa", "restaurant", "book", "reserve"]
+
+    if any(k in user_input.lower() for k in keywords):
+        link = whatsapp_redirect(user_input)
+        response += f"\n\n📲 **You will now be connected to our hotel team:**\n[{link}]({link})"
+
+        st.session_state.requests_log.append({
+            "time": datetime.now(),
+            "request": user_input,
+            "status": "Pending"
+        })
+
+    with st.chat_message("assistant"):
+        st.markdown(response)
+
+    st.session_state.messages.append({"role": "assistant", "content": response})
 
 # ======================
-# Quick Actions
+# MANAGEMENT PANEL
 # ======================
 st.divider()
-st.subheader("Quick Services")
+st.subheader("🔐 Management Panel")
 
-col1, col2, col3 = st.columns(3)
+password = st.text_input("Enter management password", type="password")
 
-with col1:
-    if st.button("🍽️ Book Restaurant"):
-        st.session_state.messages.append(
-            {"role": "user", "content": "I want to book a table at the restaurant."}
+if password == MANAGER_PASSWORD:
+    st.success("Access granted")
+
+    one_week_ago = datetime.now() - timedelta(days=7)
+
+    filtered = [
+        r for r in st.session_state.requests_log
+        if r["time"] >= one_week_ago
+    ]
+
+    for r in filtered:
+        st.write(
+            f"🕒 {r['time'].strftime('%Y-%m-%d %H:%M')} | "
+            f"📩 {r['request']} | "
+            f"⚠️ {r['status']}"
         )
-        st.rerun()
-
-with col2:
-    if st.button("💆 Book Spa"):
-        st.session_state.messages.append(
-            {"role": "user", "content": "I want to book a spa session."}
-        )
-        st.rerun()
-
-with col3:
-    st.link_button(
-        "📲 WhatsApp Hotel",
-        "https://wa.me/96891278434"
-    )
